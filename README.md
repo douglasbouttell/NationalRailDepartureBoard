@@ -10,3 +10,5 @@ This project depends on:
 * [TaskScheduler](https://github.com/arkhipenko/TaskScheduler)
 * [Adafruit GFX](https://github.com/adafruit/Adafruit-GFX-Library)
 * [Adafruit ILI9341](https://github.com/adafruit/Adafruit_ILI9341)
+
+![Demo](images/demo.jpg)
