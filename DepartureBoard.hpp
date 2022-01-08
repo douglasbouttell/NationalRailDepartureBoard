@@ -8,6 +8,7 @@
 struct DepartureBoardEntry {
   const char* time;
   const char* destination;
+  const char* via;
   const char* platform;
   const char* estimated;
   boolean highlight;
@@ -17,39 +18,36 @@ class DepartureBoard {
   private:
     Adafruit_ILI9341& tft;
     const char* locationName;
-    const char* time;
     DepartureBoardEntry entries[20];
     GFXcanvas1 line_canvas;
+    int animationTick;
   
   public:
     DepartureBoard(Adafruit_ILI9341& tft) 
       : tft(tft)
       , locationName(NULL)
-      , time(NULL)
       , entries{0}
       , line_canvas(320, 10) 
+      , animationTick(0)
     {}
 
     void init() {
       Logger::notice("DepartureBoard::init()", "initializing");
-      this->tft.begin();
-      this->tft.setRotation(1);
-      this->tft.fillScreen(ILI9341_BLACK);
-      this->tft.setTextWrap(false);
+      tft.begin();
+      tft.setRotation(1);
+      tft.fillScreen(ILI9341_BLACK);
+      tft.setTextWrap(false);
     }
 
     void setLocationName(const char* str) {
-      this->locationName = str;
-    }
-
-    void setTime(const char* time) {
-      this->time = time;
+      locationName = str;
     }
 
     void setEntry(
       uint8_t i, 
       const char* time, 
       const char* destination, 
+      const char* via,
       const char* platform,
       const char* estimated,
       boolean highlight
@@ -58,78 +56,103 @@ class DepartureBoard {
         return;
       }
 
-      this->entries[i].time = time;
-      this->entries[i].destination = destination;
-      this->entries[i].platform = platform;
-      this->entries[i].estimated = estimated;
-      this->entries[i].highlight = highlight;
+      entries[i].time = time;
+      entries[i].destination = destination;
+      entries[i].via = via;
+      entries[i].platform = platform;
+      entries[i].estimated = estimated;
+      entries[i].highlight = highlight;
     }
 
     void clearEntry(uint8_t i) {
-      this->setEntry(i, NULL, NULL, NULL, NULL, false);
+      setEntry(i, NULL, NULL, NULL, NULL, NULL, false);
     }
 
-    void draw() {
-      int i;
+    void tick() {
+      animationTick++;
+      if (animationTick > 1) {
+        animationTick = 0;
+      }
+    }
+
+    void tick(int value) {
+      animationTick = value;
+    }
+
+    void draw_header() {
+      tft.fillRect(0, 0, tft.width(), 30, ILI9341_BLUE);
       
-      this->tft.fillRect(0, 0, this->tft.width(), 30, ILI9341_BLUE);
-      
-      this->tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
-      this->tft.setCursor(2, 2);
-      this->tft.setTextSize(2);
-      if (this->locationName) {
-        this->tft.print(this->locationName);
-        this->tft.print(" departures");
+      tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
+      tft.setCursor(2, 2);
+      tft.setTextSize(2);
+      if (locationName) {
+        tft.print(locationName);
+        tft.print(" departures");
       }
       
-      this->tft.setTextSize(1);
-      this->tft.setCursor(2, 20);
-      this->tft.print("Time");
-      this->tft.setCursor(50, 20);
-      this->tft.print("Destination");
-      this->tft.setCursor(230, 20);
-      this->tft.print("Plat");
-      this->tft.setCursor(260, 20);
-      this->tft.print("Expected");
-    
+      tft.setTextSize(1);
+      tft.setCursor(2, 20);
+      tft.print("Time");
+      tft.setCursor(50, 20);
+      tft.print("Destination");
+      tft.setCursor(230, 20);
+      tft.print("Plat");
+      tft.setCursor(260, 20);
+      tft.print("Expected");
+    }
+
+    void draw_body(boolean force) {
+      int i;    
       for (i = 0; i < 20; ++i) {
         uint16_t y_offset = 30 + (i*10);
-        // Clear the line
-        this->line_canvas.fillRect(0, 0, 320, 10, ILI9341_BLACK);
 
-        if (this->entries[i].time) {
-          this->line_canvas.setCursor(2, 1);
-          this->line_canvas.print(this->entries[i].time);
+        if (!force && !entries[i].via) {
+          /* Don't update anything since we have nothing to animate */
+          continue;
         }
-        if (this->entries[i].destination) {
-          this->line_canvas.setCursor(50, 1);
-          this->line_canvas.print(this->entries[i].destination);
+        
+        // Clear the line
+        line_canvas.fillRect(0, 0, 320, 10, ILI9341_BLACK);
+
+        line_canvas.setCursor(2, 1);
+        if (entries[i].time) {
+          line_canvas.print(entries[i].time);
         }
-        if (this->entries[i].platform) {
-          this->line_canvas.setCursor(230, 1);
-          this->line_canvas.print(this->entries[i].platform);
+        
+        line_canvas.setCursor(50, 1);
+        if (entries[i].destination && animationTick == 0) {
+          line_canvas.print(entries[i].destination);
+        } else if (entries[i].via && animationTick == 1) {
+          line_canvas.print(entries[i].via);
         }
-        if (this->entries[i].estimated) {
-          this->line_canvas.setCursor(260, 1);
-          this->line_canvas.print(this->entries[i].estimated);
+        
+        line_canvas.setCursor(230, 1);
+        if (entries[i].platform) {
+          line_canvas.print(entries[i].platform);
+        }
+        
+        line_canvas.setCursor(260, 1);
+        if (entries[i].estimated) {
+          line_canvas.print(entries[i].estimated);
         }      
-        if (this->entries[i].highlight) {
-          this->tft.drawBitmap(0, y_offset, this->line_canvas.getBuffer(), 320, 10, ILI9341_BLACK, ILI9341_YELLOW);
+        
+        if (entries[i].highlight) {
+          tft.drawBitmap(0, y_offset, line_canvas.getBuffer(), 320, 10, ILI9341_BLACK, ILI9341_YELLOW);
         } else {    
-          this->tft.drawBitmap(0, y_offset, this->line_canvas.getBuffer(), 320, 10, ILI9341_YELLOW, ILI9341_BLACK);
+          tft.drawBitmap(0, y_offset, line_canvas.getBuffer(), 320, 10, ILI9341_YELLOW, ILI9341_BLACK);
         }
       }
       
-      this->tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
-      this->tft.fillRect(0, 230, tft.width(), 240, ILI9341_BLUE);
-      this->tft.setCursor(2, 231);
-      this->tft.print("Page 1 of 1");
+      tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
+      tft.fillRect(0, 230, tft.width(), 240, ILI9341_BLUE);
+      tft.setCursor(2, 231);
+      tft.print("Page 1 of 1");
     }
 
-    void draw_time() {
-      this->tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
-      this->tft.setCursor(270, 231);
-      this->tft.print(this->time);
+    void draw_time(const char* str) {
+      tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
+      tft.setCursor(270, 231);
+      tft.print(str);
     }
 };
 

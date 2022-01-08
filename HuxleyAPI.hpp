@@ -37,32 +37,32 @@ class HuxleyAPI {
     {}
 
     String getBody() {
-      return this->body;
+      return body;
     }
 
     String getErrorString() {
-      return this->http.errorToString(code);
+      return http.errorToString(code);
     }
 
     boolean get(const char* stationCrs) {
       String url = "http://" 
-        + this->baseURL
+        + baseURL
         + "/departures/" 
         + String(stationCrs) 
         + "/20"
         + "?accessToken="
-        + this->accessToken;
+        + accessToken;
       
-      this->http.begin(url);
-      this->code = http.GET();
+      http.begin(url);
+      code = http.GET();
       
-      if(this->code == HTTP_CODE_OK) {
-        this->body = this->http.getString();
-        this->http.end();
+      if(code == HTTP_CODE_OK) {
+        body = http.getString();
+        http.end();
         return true;
       } else {
-        this->http.end();
-        this->body = String("");
+        http.end();
+        body = String("");
         return false;
       }
     }  

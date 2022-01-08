@@ -26,6 +26,7 @@ class HuxleyDeparturesJSONParser {
       this->filter["locationName"] = true;
       this->filter["trainServices"][0]["destination"][0]["locationName"] = true;
       this->filter["trainServices"][0]["destination"][0]["crs"] = true;
+      this->filter["trainServices"][0]["destination"][0]["via"] = true;
       this->filter["trainServices"][0]["std"] = true;
       this->filter["trainServices"][0]["etd"] = true;
       this->filter["trainServices"][0]["platform"] = true;
@@ -53,11 +54,12 @@ const int   TFT_DC             = 33;
 /* Magic Constants -------------------------------- */
 //const char* WIFI_SSID        // See wifi_settings.h
 //const char* WIFI_PASSWORD    // See wifi_settings.h
-const char* STATION            = "edb";
-const char* HIGHLIGHT_STATION  = "GLQ";
-const char* NTP_SERVER         = "pool.ntp.org";
-const long  NTP_GTMOFFSET      = 0;
-const int   NTP_DAYLIGHTOFFSET = 0;
+const char*   STATION            = "edb";
+const char*   HIGHLIGHT_STATION  = "GLQ";
+const char*   NTP_SERVER         = "pool.ntp.org";
+const long    NTP_GTMOFFSET      = 0;
+const int     NTP_DAYLIGHTOFFSET = 0;
+const uint8_t SCREEN_TICK_FREQ   = 3;
 /* ------------------------------------------------ */
 
 WiFiMulti                  wifi;
@@ -69,13 +71,15 @@ DepartureBoard             board      = DepartureBoard(tft);
 struct tm                  timeinfo;
 char                       timestr[9] = {0};
 uint8_t                    nextUpdate = 0;
+boolean                    newData    = false;
+uint8_t                    tickIn     = 0;
 
 void getTrainTimes();
-void drawTime();
+void updateScreen();
 
 Scheduler sched;
 Task taskGetTrainTimes(60000, TASK_FOREVER, &getTrainTimes, &sched, true);
-Task taskDrawTime(1000, TASK_FOREVER, &drawTime, &sched, true);
+Task taskUpdateScreen(1000, TASK_FOREVER, &updateScreen, &sched, true);
 
 boolean callAPI() {
   int i;
@@ -100,6 +104,10 @@ boolean callAPI() {
           Serial.print(json["trainServices"][i]["std"].as<char*>());
           Serial.print(" ");
           Serial.print(json["trainServices"][i]["destination"][0]["locationName"].as<char*>());
+          if (json["trainServices"][i]["destination"][0]["via"].as<char*>()) {
+            Serial.print(" via ");
+            Serial.print(json["trainServices"][i]["destination"][0]["via"].as<char*>());
+          }
           Serial.print(" (");
           Serial.print(json["trainServices"][i]["destination"][0]["crs"].as<char*>());
           Serial.println(")");
@@ -108,6 +116,7 @@ boolean callAPI() {
             i, 
             json["trainServices"][i]["std"].as<char*>(),
             json["trainServices"][i]["destination"][0]["locationName"].as<char*>(),
+            json["trainServices"][i]["destination"][0]["via"].as<char*>(),
             json["trainServices"][i]["platform"].as<char*>(),
             json["trainServices"][i]["etd"].as<char*>(),
             strncmp(json["trainServices"][i]["destination"][0]["crs"].as<char*>(), HIGHLIGHT_STATION, 3) == 0
@@ -132,20 +141,32 @@ boolean callAPI() {
 void getTrainTimes() {
   Serial.println("I: TASK: getTrainTimes");
   digitalWrite(LED, HIGH);
-  if (callAPI()) {
-    Serial.println("I: Drawing");
-    board.draw();
-  }
+  newData = callAPI();
   digitalWrite(LED, LOW);
 }
 
 /* TASK */
-void drawTime() {
-  Serial.println("I: TASK: drawTime");
+void updateScreen() {
+  Serial.println("I: TASK: updateScreen");
+  if (tickIn == 0) {
+    tickIn = SCREEN_TICK_FREQ;
+    board.tick();
+  } else {
+    tickIn--;
+  }
+  
+  if (newData) {
+    board.tick(0);
+    board.draw_header();
+    board.draw_body(true);
+    newData = false;
+  } else {
+    board.draw_body(false);
+  }
+  
   if(getLocalTime(&timeinfo)){
     strftime(timestr, sizeof(timestr), "%H:%M:%S", &timeinfo);
-    board.setTime(timestr);
-    board.draw_time();
+    board.draw_time(timestr);
   } else {
     Serial.println("E: Failed to get time");
   }
@@ -157,6 +178,7 @@ void setup() {
   /* Initialize the departure board */
   /* This clears the screen and sets the rotation (landscape) */
   board.init();
+  board.draw_header();
 
   /* TODO: Setup Improv over serial for Wifi Connection */
   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
