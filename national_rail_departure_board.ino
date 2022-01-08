@@ -4,11 +4,18 @@
 #include "time.h"
 #include <WiFi.h>
 #include <WiFiMulti.h>
+// https://arduinojson.org/
 #include <ArduinoJson.h>
+// https://github.com/arkhipenko/TaskScheduler
+#include <TaskScheduler.h>
 
+#include "wifi_settings.h"
 #include "DepartureBoard.hpp"
 #include "HuxleyAPI.hpp"
 
+/**
+ * JSON parser and filter for the Huxley API
+ */
 class HuxleyDeparturesJSONParser {
   private:
     DynamicJsonDocument filter;
@@ -44,8 +51,8 @@ const int   LED                = 13;
 const int   TFT_CS             = 15;
 const int   TFT_DC             = 33;
 /* Magic Constants -------------------------------- */
-const char* WIFI_SSID          = "NETGEAR69";
-const char* WIFI_PASSWORD      = "strongtrumpet231";
+//const char* WIFI_SSID        // See wifi_settings.h
+//const char* WIFI_PASSWORD    // See wifi_settings.h
 const char* STATION            = "edb";
 const char* HIGHLIGHT_STATION  = "GLQ";
 const char* NTP_SERVER         = "pool.ntp.org";
@@ -56,23 +63,21 @@ const int   NTP_DAYLIGHTOFFSET = 0;
 WiFiMulti                  wifi;
 HuxleyAPI                  api;
 HuxleyDeparturesJSONParser parser;
-DynamicJsonDocument        json   = DynamicJsonDocument(4096);
-Adafruit_ILI9341           tft    = Adafruit_ILI9341(TFT_CS, TFT_DC);
-DepartureBoard             board  = DepartureBoard(tft);
+DynamicJsonDocument        json       = DynamicJsonDocument(4096);
+Adafruit_ILI9341           tft        = Adafruit_ILI9341(TFT_CS, TFT_DC);
+DepartureBoard             board      = DepartureBoard(tft);
 struct tm                  timeinfo;
-char                       timestr[9];
+char                       timestr[9] = {0};
 uint8_t                    nextUpdate = 0;
 
-void wifi_setup() {
-  // TODO: Setup Improv over serial for Wifi Connection
-  wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("I: WiFi Connecting to ");
-  Serial.println(WIFI_SSID);
-  while(wifi.run() != WL_CONNECTED) { delay(500); }
-  Serial.println("I: WiFi Connected");
-}
+void getTrainTimes();
+void drawTime();
 
-boolean get_train_times() {
+Scheduler sched;
+Task taskGetTrainTimes(60000, TASK_FOREVER, &getTrainTimes, &sched, true);
+Task taskDrawTime(1000, TASK_FOREVER, &drawTime, &sched, true);
+
+boolean callAPI() {
   int i;
   int returnedSize;
   Serial.println("I: Calling API");
@@ -89,19 +94,23 @@ boolean get_train_times() {
       
       for (i = 0; i < 20; ++i) {
         if (i < returnedSize) {
-          Serial.print("I: Setting entry ");
+          Serial.print("I: ");
           Serial.print(i);
-          Serial.print(" to ");
+          Serial.print(" -> ");
           Serial.print(json["trainServices"][i]["std"].as<char*>());
           Serial.print(" ");
-          Serial.println(json["trainServices"][i]["destination"][0]["locationName"].as<char*>());
+          Serial.print(json["trainServices"][i]["destination"][0]["locationName"].as<char*>());
+          Serial.print(" (");
+          Serial.print(json["trainServices"][i]["destination"][0]["crs"].as<char*>());
+          Serial.println(")");
           
           board.setEntry(
             i, 
             json["trainServices"][i]["std"].as<char*>(),
             json["trainServices"][i]["destination"][0]["locationName"].as<char*>(),
             json["trainServices"][i]["platform"].as<char*>(),
-            json["trainServices"][i]["etd"].as<char*>()
+            json["trainServices"][i]["etd"].as<char*>(),
+            strncmp(json["trainServices"][i]["destination"][0]["crs"].as<char*>(), HIGHLIGHT_STATION, 3) == 0
           );
         } else {
           board.clearEntry(i);
@@ -119,30 +128,20 @@ boolean get_train_times() {
   return false;
 }
 
-void setup() {
-  Serial.begin(115200);
-    
-  board.init();
-  board.setHighlight(HIGHLIGHT_STATION);
-  wifi_setup();
-  configTime(NTP_GTMOFFSET, NTP_DAYLIGHTOFFSET, NTP_SERVER);
-  
-  pinMode(LED, OUTPUT);
+/* TASK */
+void getTrainTimes() {
+  Serial.println("I: TASK: getTrainTimes");
+  digitalWrite(LED, HIGH);
+  if (callAPI()) {
+    Serial.println("I: Drawing");
+    board.draw();
+  }
+  digitalWrite(LED, LOW);
 }
 
-void loop() {
-  if (nextUpdate == 0) {
-    digitalWrite(LED, HIGH);
-    if (get_train_times()) {
-      Serial.println("I: Drawing");
-      board.draw();
-    }
-    digitalWrite(LED, LOW);
-    nextUpdate = 60;
-  } else {
-    nextUpdate--;
-  }
-
+/* TASK */
+void drawTime() {
+  Serial.println("I: TASK: drawTime");
   if(getLocalTime(&timeinfo)){
     strftime(timestr, sizeof(timestr), "%H:%M:%S", &timeinfo);
     board.setTime(timestr);
@@ -150,6 +149,32 @@ void loop() {
   } else {
     Serial.println("E: Failed to get time");
   }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  /* Initialize the departure board */
+  /* This clears the screen and sets the rotation (landscape) */
+  board.init();
+
+  /* TODO: Setup Improv over serial for Wifi Connection */
+  wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("I: WiFi Connecting to ");
+  Serial.println(WIFI_SSID);
+  while(wifi.run() != WL_CONNECTED) { delay(500); }
+  Serial.println("I: WiFi Connected");
+
+  /* Set up NTP */
+  configTime(NTP_GTMOFFSET, NTP_DAYLIGHTOFFSET, NTP_SERVER);
+
+  /* Allow the LED to flash */
+  pinMode(LED, OUTPUT);
   
-  delay(1000);
+  Serial.println("I: Starting Scheduler");
+  sched.startNow(); 
+}
+
+void loop() {
+  sched.execute();
 }

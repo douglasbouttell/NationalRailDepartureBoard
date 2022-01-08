@@ -10,13 +10,13 @@ struct DepartureBoardEntry {
   const char* destination;
   const char* platform;
   const char* estimated;
+  boolean highlight;
 };
 
 class DepartureBoard {
   private:
     Adafruit_ILI9341& tft;
     const char* locationName;
-    const char* highlight;
     const char* time;
     DepartureBoardEntry entries[20];
     GFXcanvas1 line_canvas;
@@ -25,7 +25,6 @@ class DepartureBoard {
     DepartureBoard(Adafruit_ILI9341& tft) 
       : tft(tft)
       , locationName(NULL)
-      , highlight(NULL)
       , time(NULL)
       , entries{0}
       , line_canvas(320, 10) 
@@ -43,15 +42,18 @@ class DepartureBoard {
       this->locationName = str;
     }
 
-    void setHighlight(const char* crs) {
-      this->highlight = crs;
-    }
-
     void setTime(const char* time) {
       this->time = time;
     }
 
-    void setEntry(uint8_t i, const char* time, const char* destination, const char* platform, const char* estimated) {
+    void setEntry(
+      uint8_t i, 
+      const char* time, 
+      const char* destination, 
+      const char* platform,
+      const char* estimated,
+      boolean highlight
+    ) {
       if (i < 0 || i >= 20) {
         return;
       }
@@ -60,10 +62,11 @@ class DepartureBoard {
       this->entries[i].destination = destination;
       this->entries[i].platform = platform;
       this->entries[i].estimated = estimated;
+      this->entries[i].highlight = highlight;
     }
 
     void clearEntry(uint8_t i) {
-      this->setEntry(i, NULL, NULL, NULL, NULL);
+      this->setEntry(i, NULL, NULL, NULL, NULL, false);
     }
 
     void draw() {
@@ -96,37 +99,25 @@ class DepartureBoard {
 
         if (this->entries[i].time) {
           this->line_canvas.setCursor(2, 1);
-          Serial.print(i);
-          Serial.print(", time=");
-          Serial.println(this->entries[i].time);
           this->line_canvas.print(this->entries[i].time);
         }
         if (this->entries[i].destination) {
           this->line_canvas.setCursor(50, 1);
-          Serial.print(i);
-          Serial.print(", dest=");
-          Serial.println(this->entries[i].destination);
           this->line_canvas.print(this->entries[i].destination);
         }
         if (this->entries[i].platform) {
           this->line_canvas.setCursor(230, 1);
-          Serial.print(i);
-          Serial.print(", plat=");
-          Serial.println(this->entries[i].platform);
           this->line_canvas.print(this->entries[i].platform);
         }
         if (this->entries[i].estimated) {
           this->line_canvas.setCursor(260, 1);
-          Serial.print(i);
-          Serial.print(", est=");
-          Serial.println(this->entries[i].estimated);
           this->line_canvas.print(this->entries[i].estimated);
         }      
-          if (this->highlight && strncmp(this->entries[i].destination, this->highlight, 3) == 0) {
-            this->tft.drawBitmap(0, y_offset, this->line_canvas.getBuffer(), 320, 10, ILI9341_BLACK, ILI9341_YELLOW);
-          } else {    
-            this->tft.drawBitmap(0, y_offset, this->line_canvas.getBuffer(), 320, 10, ILI9341_YELLOW, ILI9341_BLACK);
-          }
+        if (this->entries[i].highlight) {
+          this->tft.drawBitmap(0, y_offset, this->line_canvas.getBuffer(), 320, 10, ILI9341_BLACK, ILI9341_YELLOW);
+        } else {    
+          this->tft.drawBitmap(0, y_offset, this->line_canvas.getBuffer(), 320, 10, ILI9341_YELLOW, ILI9341_BLACK);
+        }
       }
       
       this->tft.setTextColor(ILI9341_WHITE, ILI9341_BLUE);
